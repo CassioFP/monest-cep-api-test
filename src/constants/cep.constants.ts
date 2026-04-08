@@ -1,0 +1,2 @@
+export const REQUEST_TIMEOUT = 30000;
+export const CEP_NOT_FOUND_MESSAGE = 'NOT_FOUND';
