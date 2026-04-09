@@ -49,4 +49,10 @@ Se uma pesquisa retornar erro, ele será mostrado no terminal de forma estrutura
 A escolha randômica poderia ser otimizada; às vezes caímos no mesmo provider mais de uma vez seguida.
 
 
-Investir mais tempo na criação de uma classe para gerar os logs de forma centralizada.
+Investir mais tempo na criação de uma classe para gerar os logs de forma centralizada. (implementado)
+
+# Updates
+- Geração de logs movida para ```src/errorsHandler/cep.error-handler.ts````
+- Criação de serviço de envio de email fake para informar quando os providers estão dando timeout
+- O serviço de envio de email pode ser facilmente reaproveitado para notificar em outros momentos
+- Teste para garantir que ao receber timout de todos os providers o serviço de envio de emails é acionado
