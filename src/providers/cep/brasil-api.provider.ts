@@ -19,6 +19,8 @@ type BrasilApiResponse = {
 @Injectable()
 export class BrasilApiProvider implements CepProvider {
   async getCep(cep: string): Promise<Cep> {
+    console.log('Consultando Brasil Api...');
+
     const url = `https://brasilapi.com.br/api/cep/v1/${cep}`;
     const { data } = await httpClient.get<BrasilApiResponse>(url, {
       timeout: REQUEST_TIMEOUT,
@@ -28,6 +30,9 @@ export class BrasilApiProvider implements CepProvider {
       throw new Error(CEP_NOT_FOUND_MESSAGE);
     }
 
-    return data;
+    const { street, city, state, neighborhood } = data;
+    const provider = 'Brasil Api';
+
+    return { cep, street, city, state, neighborhood, provider };
   }
 }

@@ -1,11 +1,18 @@
 import { Cep, CepProvider } from '../types/cep.types';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DiscoveryService, Reflector } from '@nestjs/core';
-import { CEP_PROVIDER } from 'src/decorators/cep.decorator';
+import {
+  ALL_PROVIDERS_TIMEOUT,
+  CEP_NOT_FOUND_MESSAGE,
+} from '../constants/cep.constants';
+import { CEP_PROVIDER } from '../decorators/cep.decorator';
+import { ERRORS_ENUM } from '../constants/cep.constants';
+import { isTimeoutError } from '../helpers/request.helper';
 
 @Injectable()
 export class CepService {
   private providers: CepProvider[] = [];
+  private readonly logger = new Logger(CepService.name);
 
   constructor(
     private discovery: DiscoveryService,
@@ -26,28 +33,72 @@ export class CepService {
       .filter((item) => this.isCepProvider(item));
   }
 
-  async getCep(cep: string): Promise<Cep> {
+  async getCep(receivedCep: string): Promise<Cep> {
+    let lastError: unknown;
+    let timeoutCount = 0;
+    const cep = this.sanitizeCep(receivedCep);
+
     for (const provider of this.getShuffleProviders()) {
       try {
         return await provider.getCep(cep);
-      } catch (err) {
-        
+      } catch (err: unknown) {
+        lastError = err;
+        const providerName = provider.constructor.name;
+        const errorPayload = { provider: providerName, cep };
+
+        if (isTimeoutError(err)) {
+          timeoutCount++;
+
+          this.logger.warn('Timeout error on provider', errorPayload);
+        } else {
+          this.logger.error(ERRORS_ENUM.PROVIDER_FAILED, {
+            ...errorPayload,
+            errorMessage:
+              err instanceof Error ? err.message : ERRORS_ENUM.UNKNOWN,
+          });
+        }
+
+        /**
+          Se as fontes sao seguras e com tempo de atualizacao similar, entao podemos parar a execucao quando um CEP nao é encontrado,
+          pois é possível que ele nao exista
+        */
+        if (err instanceof Error && err.message === CEP_NOT_FOUND_MESSAGE) {
+          throw err;
+        }
       }
     }
 
-    throw new Error('All providers failed');
+    if (timeoutCount === this.providers.length) {
+      this.logger.error(ERRORS_ENUM.ALL_PROVIDERS_TIMEOUT, { cep });
+
+      throw new Error(ALL_PROVIDERS_TIMEOUT);
+    }
+
+    this.logger.error(ERRORS_ENUM.ALL_PROVIDER_FAILED, {
+      cep,
+      lastError:
+        lastError instanceof Error ? lastError.message : ERRORS_ENUM.UNKNOWN,
+    });
+
+    throw new Error(ERRORS_ENUM.ALL_PROVIDER_FAILED);
   }
 
-  getShuffleProviders(): Array<CepProvider> {
-    const randomIndex = Math.floor(Math.random() * this.providers.length);
-
-    return [
-      this.providers[randomIndex],
-      ...this.providers.filter((_, i) => i !== randomIndex),
-    ];
+  private sanitizeCep(value: string): string {
+    return value.replace(/[\s-]/g, '');
   }
 
-  isCepProvider(obj: unknown): obj is CepProvider {
+  private getShuffleProviders(): Array<CepProvider> {
+    const result = [...this.providers];
+
+    for (let i = result.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [result[i], result[j]] = [result[j], result[i]];
+    }
+
+    return result;
+  }
+
+  private isCepProvider(obj: unknown): obj is CepProvider {
     if (typeof obj !== 'object' || obj === null) return false;
     if (!('getCep' in obj)) return false;
 
