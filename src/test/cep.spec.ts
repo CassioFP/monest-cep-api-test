@@ -1,5 +1,4 @@
 import { CepService } from '../services/cep.service';
-// import { CEP_NOT_FOUND_MESSAGE } from '../constants/cep.constants';
 
 describe('CepService', () => {
   let service: CepService;
@@ -8,6 +7,9 @@ describe('CepService', () => {
     getCep: jest.fn(),
     ...impl,
   });
+  const mockEmailService = {
+    send: jest.fn(),
+  };
 
   it('should fallback when one provider times out', async () => {
     const timeoutError = { code: 'ECONNABORTED' };
@@ -20,7 +22,7 @@ describe('CepService', () => {
       getCep: jest.fn().mockResolvedValue({ cep: '12345678' }),
     });
 
-    service = new CepService({} as any, {} as any);
+    service = new CepService({} as any, {} as any, mockEmailService);
 
     (service as any).providers = [provider1, provider2];
 
@@ -46,7 +48,7 @@ describe('CepService', () => {
       getCep: jest.fn().mockRejectedValue(timeoutError),
     });
 
-    service = new CepService({} as any, {} as any);
+    service = new CepService({} as any, {} as any, mockEmailService);
     (service as any).providers = [provider1, provider2];
 
     jest.spyOn(service, 'getShuffleProviders').mockReturnValue([
@@ -55,6 +57,11 @@ describe('CepService', () => {
     ]);
     await expect(service.getCep('12345678')).rejects.toThrow(
       'ALL_PROVIDERS_TIMEOUT',
+    );
+
+    expect(mockEmailService.send).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ cep: '12345678' }),
     );
   });
 
@@ -67,7 +74,7 @@ describe('CepService', () => {
       getCep: jest.fn(),
     });
 
-    service = new CepService({} as any, {} as any);
+    service = new CepService({} as any, {} as any, mockEmailService);
     (service as any).providers = [provider1, provider2];
 
    jest.spyOn(service, 'getShuffleProviders').mockReturnValue([

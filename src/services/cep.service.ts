@@ -1,22 +1,19 @@
 import { Cep, CepProvider } from '../types/cep.types';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { DiscoveryService, Reflector } from '@nestjs/core';
-import {
-  ALL_PROVIDERS_TIMEOUT,
-  CEP_NOT_FOUND_MESSAGE,
-} from '../constants/cep.constants';
 import { CEP_PROVIDER } from '../decorators/cep.decorator';
+import { CepErrorHandler } from '../errorsHandler/cep.error-handler';
+import { EmailService } from './email.service';
 import { ERRORS_ENUM } from '../constants/cep.constants';
-import { isTimeoutError } from '../helpers/request.helper';
 
 @Injectable()
 export class CepService {
   private providers: CepProvider[] = [];
-  private readonly logger = new Logger(CepService.name);
 
   constructor(
     private discovery: DiscoveryService,
     private reflector: Reflector,
+    private notificationService: EmailService,
   ) {}
 
   onModuleInit() {
@@ -43,44 +40,27 @@ export class CepService {
         return await provider.getCep(cep);
       } catch (err: unknown) {
         lastError = err;
-        const providerName = provider.constructor.name;
-        const errorPayload = { provider: providerName, cep };
-
-        if (isTimeoutError(err)) {
-          timeoutCount++;
-
-          this.logger.warn('Timeout error on provider', errorPayload);
-        } else {
-          this.logger.error(ERRORS_ENUM.PROVIDER_FAILED, {
-            ...errorPayload,
-            errorMessage:
-              err instanceof Error ? err.message : ERRORS_ENUM.UNKNOWN,
-          });
+        const result = CepErrorHandler.handleProviderError(err, provider, cep);
+        if (result.stopExecution) {
+          throw err;
         }
 
-        /**
-          Se as fontes sao seguras e com tempo de atualizacao similar, entao podemos parar a execucao quando um CEP nao é encontrado,
-          pois é possível que ele nao exista
-        */
-        if (err instanceof Error && err.message === CEP_NOT_FOUND_MESSAGE) {
-          throw err;
+        if (result.isTimeout) {
+          timeoutCount++;
         }
       }
     }
 
     if (timeoutCount === this.providers.length) {
-      this.logger.error(ERRORS_ENUM.ALL_PROVIDERS_TIMEOUT, { cep });
-
-      throw new Error(ALL_PROVIDERS_TIMEOUT);
+      this.notificationService.send(ERRORS_ENUM.ALL_PROVIDERS_TIMEOUT, { cep });
     }
 
-    this.logger.error(ERRORS_ENUM.ALL_PROVIDER_FAILED, {
+    return CepErrorHandler.handleFinalError(
       cep,
-      lastError:
-        lastError instanceof Error ? lastError.message : ERRORS_ENUM.UNKNOWN,
-    });
-
-    throw new Error(ERRORS_ENUM.ALL_PROVIDER_FAILED);
+      timeoutCount,
+      lastError,
+      this.providers,
+    );
   }
 
   private sanitizeCep(value: string): string {

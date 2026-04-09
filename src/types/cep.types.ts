@@ -12,8 +12,7 @@ export interface CepProvider {
 }
 
 export type CepErrorLog = {
-  errorName: string;
   cep: string;
   providerName: string;
   errorMessage?: string;
-}
+};
